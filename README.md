@@ -14,7 +14,6 @@
   <img alt="Ubuntu" src="https://img.shields.io/badge/Ubuntu-26.04%20LTS-E95420?logo=ubuntu&logoColor=white">
   <img alt="Rocky" src="https://img.shields.io/badge/Rocky%20Linux-10-10B981?logo=rockylinux&logoColor=white">
   <img alt="JetBrains" src="https://img.shields.io/badge/JetBrains-Remote%20SSH-000000?logo=jetbrains&logoColor=white">
-  <img alt="License" src="https://img.shields.io/badge/license-open%20source-blue">
 </p>
 
 `kvm-devbox.sh` is a single interactive Bash script that creates a VM with its own disk, private network, SSH key and identity, installs the development tools you pick, and wires up `~/.ssh/config` so you can run `ssh dev-<name>` or open the VM straight from a **JetBrains IDE over SSH**.
@@ -436,7 +435,3 @@ Example `~/.config/kvm-devbox/config.json`:
 | Some tools fail to install | Read the summary at the end of provisioning, then run option **2** again to retry. |
 | `docker: permission denied` | Log out and back in so the `docker` group applies. |
 | JetBrains cannot connect | Confirm `ssh dev-<name>` works in a terminal, the key path is correct, and the VM has internet access for the IDE backend download. |
-
-## 📄 License
-
-Open source. Add your license here.
