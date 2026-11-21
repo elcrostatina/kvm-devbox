@@ -124,8 +124,9 @@ You will be asked for your `sudo` password once. The main screen lists the VMs m
 |---|---|
 | 1 | Create a new VM |
 | 2 | Install development tools on an existing VM |
-| 3 | Delete a VM |
-| 4 | Quit |
+| 3 | Start / stop VMs (checklist) |
+| 4 | Delete a VM |
+| 5 | Quit |
 
 > [!NOTE]
 > Set `NO_COLOR=1` to disable colours. The UI falls back to plain ASCII when the locale is not UTF-8.
@@ -333,9 +334,40 @@ Everything is installed under the `dev` user's home, so point the IDE at it:
 |---|---|
 | List VMs | Run the script; the table shows name, subnet `N`, IP, OS and state |
 | Add or update tools | Option **2**, pick the VM, pick tools (already installed tools are shown) |
-| Delete a VM | Option **3**, type the VM name to confirm. Removes the VM (and NVRAM), its `client-<name>.qcow2` disk, the network, the SSH config entry and known_hosts entry; asks before deleting the SSH key. Base images are never deleted |
-| Start / stop | `sudo virsh start dev-<name>` / `sudo virsh shutdown dev-<name>` |
+| Start / stop VMs | Option **3**, tick the VMs you want running (see below) |
+| Delete a VM | Option **4**, type the VM name to confirm. Removes the VM (and NVRAM), its `client-<name>.qcow2` disk, the network, the SSH config entry and known_hosts entry; asks before deleting the SSH key. Base images are never deleted |
 | Console | `sudo virsh console dev-<name>` (needs a console password) |
+
+### Start and stop with a checklist
+
+Option **3** shows every managed VM as a checklist. A ticked VM should be running, an unticked one should be off. Toggle what you want, press Enter, and only the differences are applied.
+
+```text
+╭─ Start / stop VMs ───────────────────────────────────────────╮
+│   [x] dev-acme                 ● running                     │
+│ ❯ [x] dev-globex               ○ shut off  ❯ start           │
+│   [ ] dev-personal             ● running   ❯ stop            │
+├──────────────────────────────────────────────────────────────┤
+│ space = select • a = all • Enter = apply • q = cancel        │
+╰──────────────────────────────────────────────────────────────╯
+```
+
+| Key | Action |
+|---|---|
+| `↑` / `↓` (or `k` / `j`) | Move |
+| `Space` | Tick / untick the VM |
+| `a` | Tick all (or untick all if all are ticked) |
+| `Enter` | Apply: start ticked VMs that are off, shut down unticked VMs that are running |
+| `q` / `Esc` | Cancel without changes |
+
+```diff
++ ✓ dev-globex is running (ssh dev-globex)
+- ✓ dev-personal is off
+```
+
+Shutdown is a clean ACPI request and the script waits up to 60 s. If a guest ignores it you are told how to force it with `sudo virsh destroy`. Paused VMs are resumed when ticked.
+
+The same actions from the command line:
 
 ```bash
 sudo virsh start dev-personal        # power on

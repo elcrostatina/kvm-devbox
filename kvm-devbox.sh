@@ -119,6 +119,7 @@ state_icon() { [ "$1" = running ] && echo "$RUN" || echo "$OFF"; }
 
 TMPS=(); PARTIAL=""
 cleanup() {
+  [ -t 1 ] && printf '\e[?25h'    # make sure the cursor is visible again
   [ -n "$PARTIAL" ] && sudo rm -f "$PARTIAL"
   [ ${#TMPS[@]} -gt 0 ] && rm -f "${TMPS[@]}"
   return 0
@@ -875,6 +876,102 @@ EOF
   box_bottom
 }
 
+# ===================== Start / stop =====================
+# Checklist: a ticked VM should be running, an unticked one should be off.
+# Space toggles, arrows/j/k move, 'a' toggles all, Enter applies, q/Esc cancels.
+PW_CUR=0; PW_STATE=(); PW_WANT=()
+power_draw() {
+  local i vm mark ptr act st
+  box_top "Start / stop VMs" "$MAG"
+  for i in "${!VMS[@]}"; do
+    vm=${VMS[$i]}; st=${PW_STATE[$i]}
+    if [ "${PW_WANT[$i]}" = 1 ]; then mark="${GRN}${B}[x]${R}"; else mark="${DIM}[ ]${R}"; fi
+    if [ "$i" -eq "$PW_CUR" ]; then ptr="${CYN}${B}${ARROW}${R}"; else ptr=" "; fi
+    act=""
+    if   [ "${PW_WANT[$i]}" = 1 ] && [ "$st" != running ]; then act="${GRN}${ARROW} start${R}"
+    elif [ "${PW_WANT[$i]}" = 0 ] && [ "$st" = running ];  then act="${RED}${ARROW} stop${R}"; fi
+    box_line "$(printf '%s %s %-22s %s%s %-9s%s %s' "$ptr" "$mark" "${vm:0:22}" \
+      "$(state_color "$st")" "$(state_icon "$st")" "$st" "$R" "$act")"
+  done
+  box_sep
+  box_line "${DIM}space = select ${BUL} a = all ${BUL} Enter = apply ${BUL} q = cancel${R}"
+  box_bottom
+}
+
+power_vms() {
+  local n=${#VMS[@]} i key rest st vm lines todo=0 waited
+  [ "$n" -gt 0 ] || { warn "no managed VMs"; return; }
+  [ -t 0 ] && [ -t 1 ] || die "this menu needs an interactive terminal"
+  PW_CUR=0; PW_STATE=(); PW_WANT=()
+  for i in "${!VMS[@]}"; do
+    st=$(dom_state "${VMS[$i]}"); PW_STATE[$i]=$st
+    if [ "$st" = running ]; then PW_WANT[$i]=1; else PW_WANT[$i]=0; fi
+  done
+
+  lines=$((n + 4))
+  echo
+  printf '\e[?25l'
+  power_draw
+  while :; do
+    IFS= read -rsn1 key || key=q
+    if [ "$key" = $'\e' ]; then
+      read -rsn2 -t 0.05 rest || rest=""
+      key+=$rest
+    fi
+    case "$key" in
+      $'\e[A'|k) PW_CUR=$(( (PW_CUR - 1 + n) % n )) ;;
+      $'\e[B'|j) PW_CUR=$(( (PW_CUR + 1) % n )) ;;
+      ' ')       PW_WANT[$PW_CUR]=$(( 1 - PW_WANT[PW_CUR] )) ;;
+      a|A)       key=1
+                 for i in "${!VMS[@]}"; do [ "${PW_WANT[$i]}" = 1 ] || key=0; done
+                 for i in "${!VMS[@]}"; do PW_WANT[$i]=$(( 1 - key )); done ;;
+      '')        break ;;
+      q|Q|$'\e') printf '\e[?25h'; warn "cancelled"; return ;;
+      *)         continue ;;
+    esac
+    printf '\e[%dA' "$lines"
+    power_draw
+  done
+  printf '\e[?25h'
+  echo
+
+  for i in "${!VMS[@]}"; do
+    vm=${VMS[$i]}; st=${PW_STATE[$i]}
+    if [ "${PW_WANT[$i]}" = 1 ]; then
+      case "$st" in
+        running) ;;
+        paused)  info "Resuming $vm";  sudo virsh resume "$vm" >/dev/null; todo=1 ;;
+        *)       info "Starting $vm";  sudo virsh start "$vm" >/dev/null;  todo=1 ;;
+      esac
+    elif [ "$st" = running ]; then
+      info "Shutting down $vm"; sudo virsh shutdown "$vm" >/dev/null; todo=1
+    fi
+  done
+  [ $todo -eq 1 ] || { ok "Nothing to change"; return; }
+
+  # shutdown is asynchronous: wait up to 60 s for the guests to power off
+  for waited in $(seq 1 30); do
+    todo=0
+    for i in "${!VMS[@]}"; do
+      [ "${PW_WANT[$i]}" = 0 ] && [ "${PW_STATE[$i]}" = running ] \
+        && [ "$(dom_state "${VMS[$i]}")" = running ] && todo=1
+    done
+    [ $todo -eq 0 ] && break
+    sleep 2
+  done
+
+  for i in "${!VMS[@]}"; do
+    vm=${VMS[$i]}; st=$(dom_state "$vm")
+    if [ "${PW_WANT[$i]}" = 1 ]; then
+      [ "$st" = running ] && ok "$vm is running ${DIM}(ssh $vm)${R}" || warn "$vm is $st"
+    elif [ "${PW_STATE[$i]}" = running ]; then
+      if [ "$st" = running ]; then
+        warn "$vm is still running: the guest ignored the shutdown request (force it with: sudo virsh destroy $vm)"
+      else ok "$vm is off"; fi
+    fi
+  done
+}
+
 # ===================== Delete =====================
 ssh_cfg_remove() {
   local cfg="$HOME/.ssh/config" t
@@ -951,13 +1048,15 @@ main() {
   box_top "What do you want to do?"
   menu_item 1 "Create a new VM"
   menu_item 2 "Install development tools on a VM"
-  menu_item 3 "Delete a VM"
-  menu_item 4 "Quit"
+  menu_item 3 "Start / stop VMs"
+  menu_item 4 "Delete a VM"
+  menu_item 5 "Quit"
   box_bottom
-  case "$(ask "Choice" 4)" in
+  case "$(ask "Choice" 5)" in
     1) create_vm ;;
     2) provision_existing ;;
-    3) delete_vm ;;
+    3) power_vms ;;
+    4) delete_vm ;;
     *) exit 0 ;;
   esac
 }
